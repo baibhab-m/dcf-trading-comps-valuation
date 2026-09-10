@@ -1,22 +1,23 @@
 # DCF and Trading Comps Valuation
 
-Listed Indian Financial — Excel Financial Modeling
+3-statement DCF + trading comps model for a listed Indian financial institution (FinBank Ltd - synthetic), deriving intrinsic value and investment view.
 
-Built 3-statement DCF & trading comps valuation for a listed entity, deriving intrinsic value & investment recommendation in Excel.
+## What it does
+- Projects **P&L, Cash Flow Statement, Balance Sheet** for 5 years
+- Discounts FCF + terminal value to get **Enterprise Value -> Equity Value -> intrinsic per share**
+- Loads `comps.csv` with peers and computes **trading comps valuation** (PE, EV/EBITDA, P/B medians)
+- Blends DCF + Comps, emits **BUY / HOLD / SELL** view
+- Prints **WACC vs terminal-growth sensitivity** grid
 
-## Overview
-Synthetic valuation for FinBank Ltd — illustrative 3-statement DCF (revenue ? FCF), WACC 11%, terminal growth 4%, plus trading comps vs 5 peers. All numbers synthetic, labeled as illustrative.
+## Run
+```bash
+pip install -r requirements.txt
+python model.py
+```
 
 ## Files
-- model.py — runnable DCF forecast + sensitivity table (WACC vs growth), prints intrinsic per share and Buy/Hold view
-- comps.csv — 6 companies (target + 5 peers) with EV/EBITDA, P/E, P/B, ROE
-- model.xlsx — to be generated via python model.py or built manually in Excel with same logic
-- equirements.txt — pandas, openpyxl`n
-## How to run
-``npython model.py
-``n
-## Investment view
-Synthetic intrinsic ~ INR 3,250 vs assumed market 2,850 ? Buy (>15% upside) on synthetic assumptions. Sensitivity table shows range across WACC 10-12% and terminal growth 3-5%.
+- `model.py` - main script, all logic
+- `comps.csv` - target + 5 peers with market cap, revenue, multiples, ROE
 
-*Empty repo — model and comps to be extended with real filings. Buildable as described.*
-
+## Note
+Synthetic illustrative numbers only. Not investment advice.
