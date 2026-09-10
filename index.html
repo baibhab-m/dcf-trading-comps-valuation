@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FinBank DCF + Comps Valuation</title>
+<style>
+body{font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;max-width:760px;margin:32px auto;padding:0 16px;color:#1a1a1a;line-height:1.5}
+h1{font-size:22px;margin-bottom:4px}
+h2{font-size:16px;margin-top:28px;border-bottom:1px solid #ddd;padding-bottom:4px}
+.sub,.note{font-size:13px;color:#555}
+label{display:block;font-size:13px;margin:8px 0 2px;color:#444}
+input{font:inherit;padding:5px 8px;border:1px solid #bbb;width:200px}
+input.wide{width:320px}
+.row{display:flex;gap:24px;flex-wrap:wrap}
+button{font:inherit;padding:6px 14px;background:#1a56db;color:#fff;border:none;cursor:pointer;margin-top:14px}
+button:hover{background:#1443ad}
+table{border-collapse:collapse;margin-top:12px;font-size:14px}
+th,td{border:1px solid #ccc;padding:4px 10px;text-align:right}
+th{background:#f2f2f2;font-weight:600}
+td:first-child,th:first-child{text-align:left}
+.result{font-size:15px;margin:6px 0}
+.result b{font-size:18px}
+.view{display:inline-block;padding:2px 10px;border:1px solid #333;font-weight:600}
+</style>
+</head>
+<body>
+<h1>FinBank Ltd - DCF + Trading Comps</h1>
+<p class="sub">5-year 3-statement projection, DCF, peer multiples, blended view. Synthetic numbers for illustration only.</p>
+
+<h2>Inputs</h2>
+<div class="row">
+<div>
+<label>Base revenue FY24 (INR Cr)</label><input id="rev" type="number" value="12000">
+<label>EBITDA margin FY24 (%)</label><input id="m0" type="number" value="32" step="any">
+<label>D&amp;A per year (INR Cr)</label><input id="da" type="number" value="300">
+<label>Tax rate (%)</label><input id="tax" type="number" value="25" step="any">
+</div>
+<div>
+<label>WACC (%)</label><input id="wacc" type="number" value="11" step="any">
+<label>Terminal growth (%)</label><input id="tg" type="number" value="4" step="any">
+<label>Net debt (INR Cr)</label><input id="debt" type="number" value="1800">
+<label>Shares (Cr)</label><input id="shares" type="number" value="12.5" step="any">
+<label>Market price (INR)</label><input id="mkt" type="number" value="2850">
+</div>
+</div>
+<label>Revenue growth, 5 years (%, comma separated)</label><input class="wide" id="growth" value="14, 13, 11, 9, 7">
+<label>EBITDA margin, 5 years (%, comma separated)</label><input class="wide" id="margins" value="33, 33.5, 34, 34, 33.5">
+<br><button onclick="run()">Run valuation</button>
+
+<h2>P&amp;L projection (INR Cr)</h2>
+<table id="pnl"><tr><th>Year</th><th>Revenue</th><th>EBITDA</th><th>EBIT</th><th>Net income</th></tr></table>
+
+<h2>Free cash flow (INR Cr)</h2>
+<table id="fcf"><tr><th>Year</th><th>FCF</th></tr></table>
+
+<h2>DCF result</h2>
+<p class="result">Enterprise value: <b id="ev">-</b> Cr</p>
+<p class="result">Equity value: <b id="eq">-</b> Cr</p>
+<p class="result">Intrinsic per share: <b>INR <span id="intr">-</span></b> (market: INR <span id="mktEcho">-</span>)</p>
+<p class="result">View: <span class="view" id="dcfView">-</span></p>
+
+<h2>Trading comps (peer medians)</h2>
+<table id="comps"><tr><th>Multiple</th><th>Peer median</th><th>Implied price (INR)</th></tr></table>
+<p class="result">Blended comps price: <b>INR <span id="compBlend">-</span></b> &nbsp; View: <span class="view" id="compView">-</span></p>
+
+<h2>Sensitivity - intrinsic per share (INR)</h2>
+<table id="sens"><tr><th>WACC \ g</th></tr></table>
+
+<h2>Blended value</h2>
+<p class="result">DCF + comps average: <b>INR <span id="final">-</span></b> &nbsp; Final view: <span class="view" id="finalView">-</span></p>
+
+<script>
+// peers from comps.csv: [marketCap, revenue, evEbitda, pe, pb]
+var PEERS=[
+  {name:"Peer_A_Bank",cap:48200,rev:16500,ev:10.1,pe:21.3,pb:3.2},
+  {name:"Peer_B_Fin",cap:29800,rev:9800,ev:8.7,pe:16.9,pb:2.4},
+  {name:"Peer_C_NBFC",cap:41500,rev:14200,ev:9.8,pe:19.7,pb:3.0},
+  {name:"Peer_D_Bank",cap:26700,rev:8900,ev:8.3,pe:15.4,pb:2.1},
+  {name:"Peer_E_Fin",cap:33800,rev:11000,ev:9.0,pe:17.8,pb:2.6}
+];
+function median(a){var s=a.slice().sort(function(x,y){return x-y;});return s[Math.floor(s.length/2)];}
+function parseList(id){return document.getElementById(id).value.split(",").map(function(s){return parseFloat(s.trim());});}
+function viewFor(intr,mkt){
+  var u=intr/mkt-1;
+  if(u>0.15)return "BUY";
+  if(u>-0.05)return "HOLD";
+  return "SELL";
+}
+function project(){
+  var rev0=parseFloat(document.getElementById("rev").value);
+  var da=parseFloat(document.getElementById("da").value);
+  var tax=parseFloat(document.getElementById("tax").value)/100;
+  var g=parseList("growth").map(function(x){return x/100;});
+  var m=parseList("margins").map(function(x){return x/100;});
+  var pnl=[],fcf=[],rev=rev0;
+  for(var i=0;i<5;i++){
+    rev=rev*(1+g[i]);
+    var ebitda=rev*m[i], ebit=ebitda-da, ni=ebit*(1-tax);
+    var capex=rev*0.07, dwc=rev*(-0.015);
+    pnl.push({rev:rev,ebitda:ebitda,ebit:ebit,ni:ni});
+    fcf.push(ni+da+dwc-capex);
+  }
+  return {pnl:pnl,fcf:fcf};
+}
+function dcfValue(fcf,wacc,tg,debt,shares){
+  var pv=0;
+  for(var i=0;i<fcf.length;i++)pv+=fcf[i]/Math.pow(1+wacc,i+1);
+  var tv=fcf[fcf.length-1]*(1+tg)/(wacc-tg);
+  var pvtv=tv/Math.pow(1+wacc,fcf.length);
+  var ev=pv+pvtv, eq=ev-debt;
+  return {ev:ev,eq:eq,intr:eq/shares,pv:pv,pvtv:pvtv};
+}
+function compsValue(shares,debt,baseRev,baseMargin){
+  var peM=median(PEERS.map(function(p){return p.pe;}));
+  var evM=median(PEERS.map(function(p){return p.ev;}));
+  var pbM=median(PEERS.map(function(p){return p.pb;}));
+  var targetEPS=35600/shares/18.5, targetBook=35600/shares/2.8;
+  var peP=peM*targetEPS, pbP=pbM*targetBook;
+  var evP=evM*(baseRev*baseMargin), eqP=evP-debt, evEbitdaP=eqP/shares;
+  return {peM:peM,evM:evM,pbM:pbM,peP:peP,pbP:pbP,evEbitdaP:evEbitdaP,blend:(peP+pbP+evEbitdaP)/3};
+}
+function run(){
+  var wacc=parseFloat(document.getElementById("wacc").value)/100;
+  var tg=parseFloat(document.getElementById("tg").value)/100;
+  var debt=parseFloat(document.getElementById("debt").value);
+  var shares=parseFloat(document.getElementById("shares").value);
+  var mkt=parseFloat(document.getElementById("mkt").value);
+  var baseRev=parseFloat(document.getElementById("rev").value);
+  var baseMargin=parseFloat(document.getElementById("m0").value)/100;
+  var pr=project();
+  var html="";
+  pr.pnl.forEach(function(r,i){html+="<tr><td>FY"+(25+i)+"</td><td>"+r.rev.toFixed(0)+"</td><td>"+r.ebitda.toFixed(0)+"</td><td>"+r.ebit.toFixed(0)+"</td><td>"+r.ni.toFixed(0)+"</td></tr>";});
+  document.getElementById("pnl").innerHTML='<tr><th>Year</th><th>Revenue</th><th>EBITDA</th><th>EBIT</th><th>Net income</th></tr>'+html;
+  var fh="";
+  pr.fcf.forEach(function(f,i){fh+="<tr><td>FY"+(25+i)+"</td><td>"+f.toFixed(0)+"</td></tr>";});
+  document.getElementById("fcf").innerHTML='<tr><th>Year</th><th>FCF</th></tr>'+fh;
+  var d=dcfValue(pr.fcf,wacc,tg,debt,shares);
+  document.getElementById("ev").textContent=d.ev.toFixed(0);
+  document.getElementById("eq").textContent=d.eq.toFixed(0);
+  document.getElementById("intr").textContent=d.intr.toFixed(0);
+  document.getElementById("mktEcho").textContent=mkt;
+  document.getElementById("dcfView").textContent=viewFor(d.intr,mkt);
+  var c=compsValue(shares,debt,baseRev,baseMargin);
+  document.getElementById("comps").innerHTML='<tr><th>Multiple</th><th>Peer median</th><th>Implied price (INR)</th></tr>'+
+    '<tr><td>P/E</td><td>'+c.peM.toFixed(1)+'x</td><td>'+c.peP.toFixed(0)+'</td></tr>'+
+    '<tr><td>EV/EBITDA</td><td>'+c.evM.toFixed(1)+'x</td><td>'+c.evEbitdaP.toFixed(0)+'</td></tr>'+
+    '<tr><td>P/B</td><td>'+c.pbM.toFixed(1)+'x</td><td>'+c.pbP.toFixed(0)+'</td></tr>';
+  document.getElementById("compBlend").textContent=c.blend.toFixed(0);
+  document.getElementById("compView").textContent=viewFor(c.blend,mkt);
+  var ws=[0.10,0.11,0.12],gs=[0.03,0.04,0.05];
+  var sh='<tr><th>WACC \\ g</th>'+gs.map(function(g){return '<th>'+Math.round(g*100)+'%</th>';}).join('')+'</tr>';
+  ws.forEach(function(w){
+    sh+='<tr><td>'+Math.round(w*100)+'%</td>'+gs.map(function(g){
+      var dd=dcfValue(pr.fcf,w,g,debt,shares);return '<td>'+dd.intr.toFixed(0)+'</td>';
+    }).join('')+'</tr>';
+  });
+  document.getElementById("sens").innerHTML=sh;
+  var fin=(d.intr+c.blend)/2;
+  document.getElementById("final").textContent=fin.toFixed(0);
+  document.getElementById("finalView").textContent=viewFor(fin,mkt);
+}
+if(typeof document!=="undefined") run();
+</script>
+</body>
+</html>

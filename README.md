@@ -18,6 +18,7 @@ python model.py
 ## Files
 - `model.py` - main script, all logic
 - `comps.csv` - target + 5 peers with market cap, revenue, multiples, ROE
+- `index.html` - same model as a single page in the browser, just open it
 
 ## Note
 Synthetic illustrative numbers only. Not investment advice.
