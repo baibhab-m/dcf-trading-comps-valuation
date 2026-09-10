@@ -22,6 +22,9 @@ td:first-child,th:first-child{text-align:left}
 .result{font-size:15px;margin:6px 0}
 .result b{font-size:18px}
 .view{display:inline-block;padding:2px 10px;border:1px solid #333;font-weight:600}
+input.bad{border-color:#b00020}
+#status{margin-top:20px;font-size:13px;color:#555;border-top:1px solid #ddd;padding-top:6px;min-height:20px}
+#status.err{color:#b00020}
 </style>
 </head>
 <body>
@@ -70,6 +73,8 @@ td:first-child,th:first-child{text-align:left}
 <h2>Blended value</h2>
 <p class="result">DCF + comps average: <b>INR <span id="final">-</span></b> &nbsp; Final view: <span class="view" id="finalView">-</span></p>
 
+<div id="status">Ready.</div>
+
 <script>
 // peers from comps.csv: [marketCap, revenue, evEbitda, pe, pb]
 var PEERS=[
@@ -86,6 +91,21 @@ function viewFor(intr,mkt){
   if(u>0.15)return "BUY";
   if(u>-0.05)return "HOLD";
   return "SELL";
+}
+// pure input check: returns error string or null (used by node test)
+function validateInputs(o){
+  if(!(o.rev>0))return "Base revenue must be positive.";
+  if(!(o.da>=0))return "D&A must be zero or positive.";
+  if(!(o.tax>=0&&o.tax<100))return "Tax rate must be between 0 and 100%.";
+  if(o.g.length!==5||o.g.some(function(x){return !isFinite(x);}))return "Revenue growth needs exactly 5 comma-separated numbers.";
+  if(o.m.length!==5||o.m.some(function(x){return !isFinite(x);}))return "EBITDA margin needs exactly 5 comma-separated numbers.";
+  if(!(o.wacc>0&&o.wacc<100))return "WACC must be between 0 and 100%.";
+  if(!(o.tg>=0&&o.tg<100))return "Terminal growth must be between 0 and 100%.";
+  if(o.wacc<=o.tg)return "WACC must be above terminal growth, else the terminal value is infinite.";
+  if(!(o.debt>=0))return "Net debt must be zero or positive.";
+  if(!(o.shares>0))return "Shares must be positive.";
+  if(!(o.mkt>0))return "Market price must be positive.";
+  return null;
 }
 function project(){
   var rev0=parseFloat(document.getElementById("rev").value);
@@ -120,13 +140,33 @@ function compsValue(shares,debt,baseRev,baseMargin){
   var evP=evM*(baseRev*baseMargin), eqP=evP-debt, evEbitdaP=eqP/shares;
   return {peM:peM,evM:evM,pbM:pbM,peP:peP,pbP:pbP,evEbitdaP:evEbitdaP,blend:(peP+pbP+evEbitdaP)/3};
 }
+function status(msg,isErr){
+  var el=document.getElementById("status");
+  el.textContent=msg;
+  el.className=isErr?"err":"";
+}
 function run(){
-  var wacc=parseFloat(document.getElementById("wacc").value)/100;
-  var tg=parseFloat(document.getElementById("tg").value)/100;
-  var debt=parseFloat(document.getElementById("debt").value);
-  var shares=parseFloat(document.getElementById("shares").value);
-  var mkt=parseFloat(document.getElementById("mkt").value);
-  var baseRev=parseFloat(document.getElementById("rev").value);
+  var t0=(typeof performance!=="undefined")?performance.now():0;
+  status("Computing…");
+  var o={
+    rev:parseFloat(document.getElementById("rev").value),
+    da:parseFloat(document.getElementById("da").value),
+    tax:parseFloat(document.getElementById("tax").value),
+    g:parseList("growth"), m:parseList("margins"),
+    wacc:parseFloat(document.getElementById("wacc").value),
+    tg:parseFloat(document.getElementById("tg").value),
+    debt:parseFloat(document.getElementById("debt").value),
+    shares:parseFloat(document.getElementById("shares").value),
+    mkt:parseFloat(document.getElementById("mkt").value)
+  };
+  var err=validateInputs(o);
+  if(err){ status("Error: "+err,true); return false; }
+  var wacc=o.wacc/100;
+  var tg=o.tg/100;
+  var debt=o.debt;
+  var shares=o.shares;
+  var mkt=o.mkt;
+  var baseRev=o.rev;
   var baseMargin=parseFloat(document.getElementById("m0").value)/100;
   var pr=project();
   var html="";
@@ -159,6 +199,9 @@ function run(){
   var fin=(d.intr+c.blend)/2;
   document.getElementById("final").textContent=fin.toFixed(0);
   document.getElementById("finalView").textContent=viewFor(fin,mkt);
+  var ms=(typeof performance!=="undefined")?(" in "+Math.max(1,Math.round(performance.now()-t0))+" ms"):"";
+  status("Done"+ms+". DCF INR "+d.intr.toFixed(0)+" + comps INR "+c.blend.toFixed(0)+" → "+viewFor(fin,mkt)+".");
+  return true;
 }
 if(typeof document!=="undefined") run();
 </script>
