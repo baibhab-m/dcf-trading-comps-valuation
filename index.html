@@ -51,11 +51,33 @@ input.bad{border-color:#b00020}
 <label>EBITDA margin, 5 years (%, comma separated)</label><input class="wide" id="margins" value="33, 33.5, 34, 34, 33.5">
 <br><button onclick="run()">Run valuation</button>
 
+<h2>Fixed assumptions (not inputs — built into the method)</h2>
+<p class="note">Everything in Inputs is an editable belief. Everything below is hard-wired method:</p>
+<table>
+<tr><th>Assumption</th><th>Value</th><th>Why</th></tr>
+<tr><td>D&amp;A</td><td>flat input value every year</td><td>illustrative round number</td></tr>
+<tr><td>Capex</td><td>7% of revenue yearly</td><td>generic rule of thumb</td></tr>
+<tr><td>Working-capital change</td><td>−1.5% of revenue yearly</td><td>assumes efficiency frees cash yearly</td></tr>
+<tr><td>Debt</td><td>frozen at input value</td><td>no repayment or fresh borrowing modeled</td></tr>
+<tr><td>Dividends</td><td>zero — all net income retained</td><td>equity grows by full NI each year</td></tr>
+<tr><td>DCF / comps blend</td><td>50 / 50</td><td>equal weight; for a bank you'd weight comps more</td></tr>
+<tr><td>View thresholds</td><td>BUY above +15%, HOLD above −5%</td><td>my cutoffs, not industry law</td></tr>
+</table>
+
 <h2>P&amp;L projection (INR Cr)</h2>
 <table id="pnl"><tr><th>Year</th><th>Revenue</th><th>EBITDA</th><th>EBIT</th><th>Net income</th></tr></table>
 
 <h2>Free cash flow (INR Cr)</h2>
 <table id="fcf"><tr><th>Year</th><th>FCF</th></tr></table>
+
+<h2>Balance sheet projection (INR Cr)</h2>
+<p class="note">Equity grows by retained net income; debt frozen; assets = equity + debt + 200 base.</p>
+<table id="bs"><tr><th>Year</th><th>Equity</th><th>Debt</th><th>Assets</th></tr></table>
+
+<h2>Discount walk — every rupee traced (INR Cr)</h2>
+<p class="note">Each year's FCF divided by (1 + WACC)^year. Terminal value uses Gordon growth: FCF₅ × (1+g) ÷ (WACC − g).</p>
+<table id="walk"><tr><th>Year</th><th>FCF / TV</th><th>Discount factor</th><th>Present value</th></tr></table>
+<p class="result" id="tvline">-</p>
 
 <h2>DCF result</h2>
 <p class="result">Enterprise value: <b id="ev">-</b> Cr</p>
@@ -113,15 +135,18 @@ function project(){
   var tax=parseFloat(document.getElementById("tax").value)/100;
   var g=parseList("growth").map(function(x){return x/100;});
   var m=parseList("margins").map(function(x){return x/100;});
-  var pnl=[],fcf=[],rev=rev0;
+  var pnl=[],rows=[],bs=[],rev=rev0,eq=19000;
+  var debt0=parseFloat(document.getElementById("debt").value);
   for(var i=0;i<5;i++){
     rev=rev*(1+g[i]);
     var ebitda=rev*m[i], ebit=ebitda-da, ni=ebit*(1-tax);
     var capex=rev*0.07, dwc=rev*(-0.015);
+    var f=ni+da+dwc-capex;
     pnl.push({rev:rev,ebitda:ebitda,ebit:ebit,ni:ni});
-    fcf.push(ni+da+dwc-capex);
+    rows.push({rev:rev,ebitda:ebitda,ebit:ebit,ni:ni,da:da,dwc:dwc,capex:capex,fcf:f});
+    eq+=ni; bs.push({equity:eq,debt:debt0,assets:eq+debt0+200});
   }
-  return {pnl:pnl,fcf:fcf};
+  return {pnl:pnl,rows:rows,bs:bs};
 }
 function dcfValue(fcf,wacc,tg,debt,shares){
   var pv=0;
@@ -169,13 +194,27 @@ function run(){
   var baseRev=o.rev;
   var baseMargin=parseFloat(document.getElementById("m0").value)/100;
   var pr=project();
+  var fcfNums=pr.rows.map(function(r){return r.fcf;});
   var html="";
   pr.pnl.forEach(function(r,i){html+="<tr><td>FY"+(25+i)+"</td><td>"+r.rev.toFixed(0)+"</td><td>"+r.ebitda.toFixed(0)+"</td><td>"+r.ebit.toFixed(0)+"</td><td>"+r.ni.toFixed(0)+"</td></tr>";});
   document.getElementById("pnl").innerHTML='<tr><th>Year</th><th>Revenue</th><th>EBITDA</th><th>EBIT</th><th>Net income</th></tr>'+html;
   var fh="";
-  pr.fcf.forEach(function(f,i){fh+="<tr><td>FY"+(25+i)+"</td><td>"+f.toFixed(0)+"</td></tr>";});
-  document.getElementById("fcf").innerHTML='<tr><th>Year</th><th>FCF</th></tr>'+fh;
-  var d=dcfValue(pr.fcf,wacc,tg,debt,shares);
+  pr.rows.forEach(function(r,i){fh+="<tr><td>FY"+(25+i)+"</td><td>"+r.ni.toFixed(0)+"</td><td>"+r.da.toFixed(0)+"</td><td>"+r.dwc.toFixed(0)+"</td><td>"+r.capex.toFixed(0)+"</td><td><b>"+r.fcf.toFixed(0)+"</b></td></tr>";});
+  document.getElementById("fcf").innerHTML='<tr><th>Year</th><th>Net income</th><th>+ D&amp;A</th><th>+ ΔWC</th><th>− Capex</th><th>= FCF</th></tr>'+fh;
+  var bh="";
+  pr.bs.forEach(function(b,i){bh+="<tr><td>FY"+(25+i)+"</td><td>"+b.equity.toFixed(0)+"</td><td>"+b.debt.toFixed(0)+"</td><td>"+b.assets.toFixed(0)+"</td></tr>";});
+  document.getElementById("bs").innerHTML='<tr><th>Year</th><th>Equity</th><th>Debt</th><th>Assets</th></tr>'+bh;
+  var wh="",pvsum=0;
+  fcfNums.forEach(function(f,i){
+    var df=1/Math.pow(1+wacc,i+1), pv=f*df; pvsum+=pv;
+    wh+="<tr><td>FY"+(25+i)+"</td><td>"+f.toFixed(0)+"</td><td>"+df.toFixed(4)+"</td><td>"+pv.toFixed(0)+"</td></tr>";
+  });
+  var tv=fcfNums[fcfNums.length-1]*(1+tg)/(wacc-tg);
+  var pvtv=tv/Math.pow(1+wacc,fcfNums.length);
+  wh+="<tr><td>Terminal</td><td>"+tv.toFixed(0)+"</td><td>"+(1/Math.pow(1+wacc,fcfNums.length)).toFixed(4)+"</td><td>"+pvtv.toFixed(0)+"</td></tr>";
+  document.getElementById("walk").innerHTML='<tr><th>Year</th><th>FCF / TV</th><th>Discount factor</th><th>Present value</th></tr>'+wh;
+  document.getElementById("tvline").textContent="TV = "+fcfNums[fcfNums.length-1].toFixed(0)+" × "+(1+tg).toFixed(2)+" ÷ ("+wacc.toFixed(2)+" − "+tg.toFixed(2)+") = "+tv.toFixed(0)+"; EV = "+pvsum.toFixed(0)+" + "+pvtv.toFixed(0)+" = "+(pvsum+pvtv).toFixed(0)+".";
+  var d=dcfValue(fcfNums,wacc,tg,debt,shares);
   document.getElementById("ev").textContent=d.ev.toFixed(0);
   document.getElementById("eq").textContent=d.eq.toFixed(0);
   document.getElementById("intr").textContent=d.intr.toFixed(0);
@@ -192,7 +231,7 @@ function run(){
   var sh='<tr><th>WACC \\ g</th>'+gs.map(function(g){return '<th>'+Math.round(g*100)+'%</th>';}).join('')+'</tr>';
   ws.forEach(function(w){
     sh+='<tr><td>'+Math.round(w*100)+'%</td>'+gs.map(function(g){
-      var dd=dcfValue(pr.fcf,w,g,debt,shares);return '<td>'+dd.intr.toFixed(0)+'</td>';
+      var dd=dcfValue(fcfNums,w,g,debt,shares);return '<td>'+dd.intr.toFixed(0)+'</td>';
     }).join('')+'</tr>';
   });
   document.getElementById("sens").innerHTML=sh;

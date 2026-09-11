@@ -150,6 +150,13 @@ if __name__ == "__main__":
     print("FinBank Ltd - 3-statement DCF + Trading Comps (synthetic)")
     print("=" * 64)
 
+    print("\nAssumptions (inputs = editable beliefs):")
+    print(f"  Base revenue FY24={BASE_REVENUE:.0f}  EBITDA margin={BASE_EBITDA_MARGIN:.0%}  D&A={BASE_DA:.0f}/yr  Tax={TAX_RATE:.0%}")
+    print(f"  Growth 5y={', '.join(f'{x:.0%}' for x in GROWTH)}  Margins 5y={', '.join(f'{x:.1%}' for x in EBITDA_MARGIN)}")
+    print(f"  WACC={WACC:.0%}  Terminal growth={TERMINAL_GROWTH:.0%}  Net debt={NET_DEBT:.0f}  Shares={SHARES_CR} Cr  Market={MARKET_PRICE:.0f}")
+    print("Assumptions (fixed method): capex=7% of revenue, dWC=-1.5% of revenue,")
+    print("  debt frozen, all NI retained, DCF/comps blended 50/50, BUY>+15% / HOLD>-5%.")
+
     pnl = project_pnl()
     cfs = project_cfs(pnl)
     bs = project_bs(pnl)
@@ -171,6 +178,12 @@ if __name__ == "__main__":
     print("-" * 64)
     dcf = dcf_value(cfs)
     print(f"  PV of FCF (5y): {dcf['pv_fcf']:.0f}")
+    for i, row in enumerate(cfs):
+        df = 1 / ((1 + WACC) ** (i + 1))
+        print(f"    FY{25 + i}: FCF {row['fcf']:.0f} x DF {df:.4f} = PV {row['fcf'] * df:.0f}")
+    last = cfs[-1]["fcf"]
+    tv_full = last * (1 + TERMINAL_GROWTH) / (WACC - TERMINAL_GROWTH)
+    print(f"  TV = {last:.0f} x {1 + TERMINAL_GROWTH:.2f} / ({WACC:.2f} - {TERMINAL_GROWTH:.2f}) = {tv_full:.0f}")
     print(f"  PV of Terminal: {dcf['pv_terminal']:.0f}")
     print(f"  Enterprise Value: {dcf['ev']:.0f}")
     print(f"  - Net Debt: {NET_DEBT:.0f}")
